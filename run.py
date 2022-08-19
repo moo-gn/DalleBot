@@ -38,7 +38,7 @@ async def on_message(message: discord.Message):
 
     if message_text.startswith("-generate"):
 
-        dalle_prompt = message_text.removeprefix("-generate")
+        dalle_prompt = message_text[10:]
 
         if validate_text(dalle_prompt):
 
