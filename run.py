@@ -1,16 +1,16 @@
 import openai
 import discord
-from credentials import SECRET, API_KEY, TOKEN
+from credentials import DALLE_SECRET, OPENAI_API_KEY, DISCORD_TOKEN
 from importlib import import_module
 DALLE = import_module("Python-DALLE.DALLE")
 
-dalle = DALLE.DALLE(SECRET)
-openai.api_key = API_KEY
+dalle = DALLE.DALLE(DALLE_SECRET)
+openai.api_key = OPENAI_API_KEY
 
 client = discord.Client()
 
 # Threshold for text moderation
-MODERATION_THRESHOLD = 0.1
+MODERATION_THRESHOLD = 0.01
 
 def validate_text(text):
 
@@ -24,7 +24,8 @@ def validate_text(text):
 
             return False
 
-    return True
+
+    return not output["flagged"]
 
 @client.event
 async def on_ready():
@@ -41,22 +42,23 @@ async def on_message(message: discord.Message):
 
         if validate_text(dalle_prompt):
 
-            print(dalle_prompt)
-
             response = await message.reply("Generating...")
 
-            images = await dalle.generate(dalle_prompt)
-
             try:
+
+                images = await dalle.generate(dalle_prompt)
+
                 for img in images:
-                    await message.reply(img['generation']['image_path'])
+
+                    await message.channel.send(img['generation']['image_path'])
 
                 await response.edit(content="Done!")
 
-            except TypeError:
-                response.edit(content="Your prompt was flagged by the system.")
+            except Exception as e:
+                await response.edit(content=str(e))
 
         else:
+
             message.reply("Your prompt was flagged by the system.")
 
-client.run(TOKEN)
+client.run(DISCORD_TOKEN)
