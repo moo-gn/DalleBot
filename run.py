@@ -1,7 +1,8 @@
-import DALLE
 import openai
 import discord
 from credentials import SECRET, API_KEY, TOKEN
+from importlib import import_module
+DALLE = import_module("Python-DALLE.DALLE")
 
 dalle = DALLE.DALLE(SECRET)
 openai.api_key = API_KEY
