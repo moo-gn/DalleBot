@@ -59,6 +59,6 @@ async def on_message(message: discord.Message):
 
         else:
 
-            message.reply("Your prompt was flagged by the system.")
+            await message.reply("Your prompt was flagged by the system.")
 
 client.run(DISCORD_TOKEN)
