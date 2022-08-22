@@ -2,4 +2,6 @@
 credentials.py
 moderation_test.py
 test.py
+populate_data.py
+sqlqueries
 __pycache__
