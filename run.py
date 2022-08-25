@@ -118,50 +118,55 @@ def download_image(image_url: str):
         raise Exception("Error in downloading image from URL")
 
 
+async def handle_prompt(message: discord.Message):
+
+    # Remove prefix, -generate = 10
+    prompt = message.content[10:]
+    
+    if validate_text(prompt):
+
+        response = await message.reply("Generating...")
+
+        try:
+            image_urls = await dalle.generate(prompt)
+
+            image_list = []
+
+            for url in image_urls:
+                image_list.append(download_image(url['generation']['image_path']))
+            
+            cdn_urls = []
+
+            for idx, image in enumerate(image_list): 
+                image_id = await message.channel.send(file=discord.File(fp=image, filename=f"{prompt}-{idx+1}.png"))
+
+                cdn_urls.append(image_id.attachments[0].url)
+
+            await response.edit(content="Done!")
+            
+            # Add prompt to database
+            add_prompt(message.author, prompt, serialize_image_urls(cdn_urls), message.created_at)
+
+        except Exception as e:
+            await response.edit(content=str(e))
+    
+    else:
+        await message.reply("Your prompt was flagged by the system.")
+
+
 @client.event
 async def on_ready():
     print(f'{client.user} has connected to Discord!')
 
 @client.event
 async def on_message(message: discord.Message):
-    
-    message_text = str(message.content)
 
-    if message_text.startswith("-generate"):
+    if message.content.startswith("-generate"):
 
-        dalle_prompt = message_text[10:]
+        handle_prompt(message)
 
-        if validate_text(dalle_prompt):
 
-            response = await message.reply("Generating...")
-
-            try:
-                image_urls = await dalle.generate(dalle_prompt)
-
-                image_list = []
-
-                for url in image_urls:
-                    image_list.append(download_image(url['generation']['image_path']))
-                
-                cdn_urls = []
-
-                for idx, image in enumerate(image_list): 
-                    image_id = await message.channel.send(file=discord.File(fp=image, filename=f"{dalle_prompt}-{idx+1}.png"))
-
-                    cdn_urls.append(image_id.attachments[0].url)
-
-                await response.edit(content="Done!")
-                
-                # Add prompt to database
-                add_prompt(message.author, dalle_prompt, serialize_image_urls(cdn_urls), message.created_at)
-
-            except Exception as e:
-                await response.edit(content=str(e))
-        
-        else:
-            await message.reply("Your prompt was flagged by the system.")
-
-    if message_text.startswith("-dalle"):
+    if message.content.startswith("-dalle"):
 
         stats = get_stats()
 
