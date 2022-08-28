@@ -29,6 +29,7 @@ connection = SSHTunnelForwarder((credentials.ssh_website),
                              ) 
 connection.start()
 
+
 def db_init():
   """
   Connects to the remote database, returns the database and its cursor
@@ -44,8 +45,10 @@ def db_init():
   # Return cursor and db
   return db.cursor(), db 
 
+
 def serialize_image_urls(images_urls: list):
     return "|".join(images_urls)
+
 
 def add_prompt(author, prompt, image_urls, timestamp):
 
@@ -59,6 +62,7 @@ def add_prompt(author, prompt, image_urls, timestamp):
     db.commit()
 
     db.close()
+
 
 def get_stats():
 
@@ -108,6 +112,7 @@ def validate_text(text):
 
     return not output["flagged"]
 
+
 def download_image(image_url: str):
     response = requests.get(image_url)
     
@@ -118,69 +123,90 @@ def download_image(image_url: str):
         raise Exception("Error in downloading image from URL")
 
 
-async def handle_prompt(message: discord.Message):
+def dalle_response_is_success(dalle_response): # If dalle response is a list it passed
+    return type(dalle_response) == list
 
-    # Remove prefix, -generate = 10
+
+async def send_dalle_images(dalle_response, message: discord.Message, prompt):
+    # Create list of download images from dalle urls
+    image_list = [download_image(url['generation']['image_path']) for url in dalle_response]
+
+    cdn_urls = []
+
+    for idx, image in enumerate(image_list): 
+        image_id = await message.channel.send(file=discord.File(fp=image, filename=f"{prompt}-{idx+1}.png"))
+        cdn_urls.append(image_id.attachments[0].url)
+
+    return cdn_urls
+
+async def generate_route(message: discord.Message):
+    # Removes prefix "-generate"
     prompt = message.content[10:]
     
     if validate_text(prompt):
 
-        response = await message.reply("Generating...")
+        bot_response = await message.reply("Generating...")
 
+        # Handling custom generic error raised in Python-DALLE 
         try:
-            image_urls = await dalle.generate(prompt)
+            dalle_response = await dalle.generate(prompt)
+        except Exception as error:
+            await bot_response.edit(content=error)
+            return error
 
-            image_list = []
-
-            for url in image_urls:
-                image_list.append(download_image(url['generation']['image_path']))
+        if dalle_response_is_success(dalle_response):
             
-            cdn_urls = []
+            cdn_urls = await send_dalle_images(dalle_response, message, prompt)
 
-            for idx, image in enumerate(image_list): 
-                image_id = await message.channel.send(file=discord.File(fp=image, filename=f"{prompt}-{idx+1}.png"))
-
-                cdn_urls.append(image_id.attachments[0].url)
-
-            await response.edit(content="Done!")
+            await bot_response.edit(content="Done!")
             
             # Add prompt to database
-            add_prompt(message.author, prompt, serialize_image_urls(cdn_urls), message.created_at)
+            try:
+                add_prompt(message.author, prompt, serialize_image_urls(cdn_urls), message.created_at)
+            except Exception as error:
+                print(error)
+                await bot_response.edit(content="Done, but can't store image in database due to an error.")
+                return error
 
-        except Exception as e:
-            await response.edit(content=str(e))
+            return "success"
     
-    else:
-        await message.reply("Your prompt was flagged by the system.")
+    # If failed first validation or second validation
+    await message.reply("Your prompt was flagged by the system.")
+    return "failed"
+
+
+async def dalle_route(message: discord.Message):
+
+    stats = get_stats()
+
+    stats_text = "```"
+
+    stats_text += f"As of {datetime.date.today().strftime('%b %d, %Y')}, total runs: {stats['runs']}, total spent: ${stats['spent']}\n"
+
+    stats_text += "\nStats breakdown\n"
+
+
+    stats_text += tabulate(stats['user_data'], headers=('User', '# Runs', 'Spent'), tablefmt='fancy_grid')
+
+    stats_text += "```"
+
+    await message.reply(stats_text)
 
 
 @client.event
 async def on_ready():
     print(f'{client.user} has connected to Discord!')
 
+
 @client.event
 async def on_message(message: discord.Message):
 
     if message.content.startswith("-generate"):
-
-        handle_prompt(message)
+        await generate_route(message)
 
 
     if message.content.startswith("-dalle"):
+        await dalle_route(message)
 
-        stats = get_stats()
-
-        stats_text = "```"
-
-        stats_text += f"As of {datetime.date.today().strftime('%b %d, %Y')}, total runs: {stats['runs']}, total spent: ${stats['spent']}\n"
-
-        stats_text += "\nStats breakdown\n"
-
-
-        stats_text += tabulate(stats['user_data'], headers=('User', '# Runs', 'Spent'), tablefmt='fancy_grid')
-
-        stats_text += "```"
-
-        await message.reply(stats_text)
 
 client.run(DISCORD_TOKEN)
