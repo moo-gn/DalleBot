@@ -1,7 +1,9 @@
+import io
 import openai
 import discord
+from PIL import Image
 import credentials
-from credentials import DALLE_SECRET, OPENAI_API_KEY, DISCORD_TOKEN
+from credentials import OPENAI_API_KEY, DISCORD_TOKEN
 import requests
 import io
 from collections import Counter
@@ -13,8 +15,15 @@ openai.api_key = OPENAI_API_KEY
 
 client = discord.Client()
 
+# Flag for debugging
+DEBUG = False
+
+
 # Threshold for text moderation
 MODERATION_THRESHOLD = 0.1
+
+# Threshold for image size in variations
+IMAGE_SIZE_LIMIT_IN_BYTES = 4 * 1024 * 1024
 
 # DB
 from pymysql import connect
@@ -121,6 +130,39 @@ def download_image(image_url: str):
         raise Exception("Error in downloading image from URL")
 
 
+async def get_discord_image_from_message(message: discord.Message) -> io.BytesIO:
+    image_io = io.BytesIO()
+    await message.attachments[0].save(image_io)
+    image_io.seek(0)
+    return image_io
+
+async def preprocess_input_image(image_io: io.BytesIO):
+    # Flag to tell if image was resized
+    resized = False
+
+    image = Image.open(image_io)
+
+    width, height = image.size
+
+    if width != height:
+        new_size = min(width, height)
+        resized = f"Input image is {width}x{height} when it needs to be 1:1. I resized it for you so that it is {new_size}x{new_size}. Will continue generating..."
+        image = image.resize((new_size, new_size), resample=Image.Resampling.NEAREST)
+    
+    new_image_io = io.BytesIO()
+    image.save(new_image_io, format="PNG")
+    new_image_io.seek(0)
+
+    image_bytes_size = new_image_io.getbuffer().nbytes
+    if  image_bytes_size >= IMAGE_SIZE_LIMIT_IN_BYTES:
+        resized = f"Input image is {round(image_bytes_size/(1024*1024), 2)} MBs when it needs to be less than 4 MBs. I cropped it to 500x500 to reduce size. Will continue generating..."
+        image = image.resize((500, 500), resample=Image.Resampling.NEAREST)
+        new_image_io = io.BytesIO()
+        image.save(new_image_io, format="PNG", quality=95)
+        new_image_io.seek(0)
+
+    return new_image_io, resized
+
 async def send_dalle_images(dalle_response, message: discord.Message, prompt):
     # Create list of download images from dalle urls
     image_list = [download_image(url["url"]) for url in dalle_response["data"]]
@@ -173,6 +215,51 @@ async def generate_route(message: discord.Message):
     return "failed"
 
 
+async def variations_route(message: discord.Message):    
+
+    bot_response = await message.reply("Generating...")
+
+    # In case the image is in a reply and not direct attachment
+    if message.reference is not None:
+        message = await message.channel.fetch_message(message.reference.message_id) 
+
+    image_io = await get_discord_image_from_message(message)
+
+    image, resized = await preprocess_input_image(image_io)
+
+    if resized and DEBUG:
+        await message.reply(resized)
+        await message.channel.send(file=discord.File(fp=image, filename=f"{message.id}.png"))
+
+    try:
+        dalle_response = openai.Image.create_variation(
+            api_key=OPENAI_API_KEY,
+            image=image.getvalue(),
+            n=4,
+            size="1024x1024",
+            response_format="url"
+        )
+    except Exception as error:
+        await bot_response.edit(content=error)
+        return error
+
+    prompt = f"variation of image {message.attachments[0].filename}"
+
+    cdn_urls = await send_dalle_images(dalle_response, message, prompt)
+
+    await bot_response.edit(content="Done!")
+
+    # Add prompt to database
+    try:
+        add_prompt(message.author, prompt, serialize_image_urls(cdn_urls), message.created_at)
+    except Exception as error:
+        print(error)
+        await bot_response.edit(content="Done, but can't store image in database due to an error.")
+        return error
+
+    return "success"
+    
+
 async def dalle_route(message: discord.Message):
 
     stats = get_stats()
@@ -205,6 +292,10 @@ async def on_message(message: discord.Message):
 
     if message.content.startswith("-dalle"):
         await dalle_route(message)
+
+
+    if message.content.startswith("-variation") or message.content.startswith("-v"):
+        await variations_route(message)
 
 
 client.run(DISCORD_TOKEN)
