@@ -142,7 +142,7 @@ async def generate_route(message: discord.Message):
         bot_response = await message.reply("Generating...")
 
         try:
-            dalle_response = await openai.Image.create(
+            dalle_response = openai.Image.create(
                 api_key=OPENAI_API_KEY,
                 prompt=prompt,
                 n=4,
