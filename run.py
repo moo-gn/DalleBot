@@ -8,9 +8,7 @@ from collections import Counter
 import datetime
 from tabulate import tabulate
 from importlib import import_module
-DALLE = import_module("Python-DALLE.DALLE")
 
-dalle = DALLE.DALLE(DALLE_SECRET)
 openai.api_key = OPENAI_API_KEY
 
 client = discord.Client()
@@ -123,13 +121,9 @@ def download_image(image_url: str):
         raise Exception("Error in downloading image from URL")
 
 
-def dalle_response_is_success(dalle_response): # If dalle response is a list it passed
-    return type(dalle_response) == list
-
-
 async def send_dalle_images(dalle_response, message: discord.Message, prompt):
     # Create list of download images from dalle urls
-    image_list = [download_image(url['generation']['image_path']) for url in dalle_response]
+    image_list = [download_image(url["url"]) for url in dalle_response["data"]]
 
     cdn_urls = []
 
@@ -147,28 +141,32 @@ async def generate_route(message: discord.Message):
 
         bot_response = await message.reply("Generating...")
 
-        # Handling custom generic error raised in Python-DALLE 
         try:
-            dalle_response = await dalle.generate(prompt)
+            dalle_response = await openai.Image.create(
+                api_key=OPENAI_API_KEY,
+                prompt=prompt,
+                n=4,
+                size="1024x1024",
+                response_format="url"
+            )
         except Exception as error:
             await bot_response.edit(content=error)
             return error
 
-        if dalle_response_is_success(dalle_response):
-            
-            cdn_urls = await send_dalle_images(dalle_response, message, prompt)
 
-            await bot_response.edit(content="Done!")
-            
-            # Add prompt to database
-            try:
-                add_prompt(message.author, prompt, serialize_image_urls(cdn_urls), message.created_at)
-            except Exception as error:
-                print(error)
-                await bot_response.edit(content="Done, but can't store image in database due to an error.")
-                return error
+        cdn_urls = await send_dalle_images(dalle_response, message, prompt)
 
-            return "success"
+        await bot_response.edit(content="Done!")
+
+        # Add prompt to database
+        try:
+            add_prompt(message.author, prompt, serialize_image_urls(cdn_urls), message.created_at)
+        except Exception as error:
+            print(error)
+            await bot_response.edit(content="Done, but can't store image in database due to an error.")
+            return error
+
+        return "success"
     
     # If failed first validation or second validation
     await message.reply("Your prompt was flagged by the system.")
