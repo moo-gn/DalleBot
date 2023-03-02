@@ -178,7 +178,10 @@ async def send_dalle_images(dalle_response, message: discord.Message, prompt):
 
 async def generate_route(message: discord.Message):
     # Removes prefix "-generate"
-    prompt = message.content[10:]
+    if message.content.startswith("-generate"):
+        prompt = message.content[10:]
+    else:
+        prompt = message.content[3:]
     
     if validate_text(prompt):
 
@@ -305,15 +308,15 @@ async def on_ready():
 @client.event
 async def on_message(message: discord.Message):
 
-    if message.content.startswith("-generate") or message.content.startswith("-g"):
+    if message.content.startswith("-generate ") or message.content.startswith("-g "):
         await generate_route(message)
 
 
-    if message.content.startswith("-dalle") or message.content.startswith("-d"):
+    if message.content.startswith("-dalle") or message.content == "-d":
         await dalle_route(message)
 
 
-    if message.content.startswith("-variation") or message.content.startswith("-v"):
+    if message.content.startswith("-variation") or message.content == "-v":
         await variations_route(message)
 
 
