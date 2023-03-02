@@ -10,6 +10,7 @@ from collections import Counter
 import datetime
 from tabulate import tabulate
 from importlib import import_module
+from urllib.parse import urlparse
 
 openai.api_key = OPENAI_API_KEY
 
@@ -120,7 +121,7 @@ def validate_text(text):
     return not output["flagged"]
 
 
-def download_image(image_url: str):
+def download_image(image_url: str) -> io.BytesIO:
     response = requests.get(image_url)
     
     if response.ok:
@@ -217,21 +218,40 @@ async def generate_route(message: discord.Message):
 
 async def variations_route(message: discord.Message):    
 
-    bot_response = await message.reply("Generating...")
-
     # In case the image is in a reply and not direct attachment
     if message.reference is not None:
         message = await message.channel.fetch_message(message.reference.message_id) 
 
-    image_io = await get_discord_image_from_message(message)
+    # The image is a url not an attachment
+    if not message.attachments:
+        # Check url is valid
+        try: 
+            urlparse(message.content)
+        except:
+            message.reply("Can't download image from URL, url is invalid.")
+            return
 
-    image, resized = await preprocess_input_image(image_io)
+        image_io = download_image(message.content)
+        prompt = f"variation of image {message.content}"
+
+
+    else:
+        image_io = await get_discord_image_from_message(message)
+        prompt = f"variation of image {message.attachments[0].filename}"
+
+
+    try:
+        image, resized = await preprocess_input_image(image_io)
+    except Exception as error:
+        await message.reply("Couldn't process the file, are you sure it's an image?")
+        return
 
     if resized and DEBUG:
         await message.reply(resized)
         await message.channel.send(file=discord.File(fp=image, filename=f"{message.id}.png"))
 
     try:
+        bot_response = await message.reply("Generating...")
         dalle_response = openai.Image.create_variation(
             api_key=OPENAI_API_KEY,
             image=image.getvalue(),
@@ -243,7 +263,6 @@ async def variations_route(message: discord.Message):
         await bot_response.edit(content=error)
         return error
 
-    prompt = f"variation of image {message.attachments[0].filename}"
 
     cdn_urls = await send_dalle_images(dalle_response, message, prompt)
 
