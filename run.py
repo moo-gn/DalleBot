@@ -305,11 +305,11 @@ async def on_ready():
 @client.event
 async def on_message(message: discord.Message):
 
-    if message.content.startswith("-generate"):
+    if message.content.startswith("-generate") or message.content.startswith("-g"):
         await generate_route(message)
 
 
-    if message.content.startswith("-dalle"):
+    if message.content.startswith("-dalle") or message.content.startswith("-d"):
         await dalle_route(message)
 
 
