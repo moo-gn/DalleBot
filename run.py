@@ -308,16 +308,20 @@ async def on_ready():
 @client.event
 async def on_message(message: discord.Message):
 
-    if message.content.startswith("-generate ") or message.content.startswith("-g "):
-        await generate_route(message)
+    try:
+        if message.content.startswith("-generate ") or message.content.startswith("-g "):
+            await generate_route(message)
 
 
-    if message.content.startswith("-dalle") or message.content == "-d":
-        await dalle_route(message)
+        if message.content.startswith("-dalle") or message.content == "-d":
+            await dalle_route(message)
 
 
-    if message.content.startswith("-variation") or message.content == "-v":
-        await variations_route(message)
+        if message.content.startswith("-variation") or message.content == "-v":
+            await variations_route(message)
+
+    except Exception as err:
+        await message.reply(f"An error occured, please try again.\nError message: {err}")
 
 
 client.run(DISCORD_TOKEN)
