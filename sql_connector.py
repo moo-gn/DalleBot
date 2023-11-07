@@ -11,6 +11,8 @@ class DBClient:
         self.conn = None
         self.cursor = None
 
+        self.initialize()
+
 
     def initialize(self):
         # start the connection to pythonanywhere
