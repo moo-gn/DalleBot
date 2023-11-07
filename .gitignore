@@ -5,3 +5,4 @@ test.py
 populate_data.py
 sqlqueries
 __pycache__
+.venv
