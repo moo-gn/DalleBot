@@ -29,15 +29,79 @@ DEBUG = False
 
 FLAGS_PREFIX = "--"
 
+QUALITY_OPTIONS = ["hd", "standard"]
+SIZE_OPTIONS = ['256x256', '512x512', '1024x1024', '1024x1792', '1792x1024']
+MODEL_OPTIONS = ["dall-e-2", "dall-e-3"]
+N_OPTIONS = [1, 2, 3, 4]
 
 class GenerateFlags(commands.FlagConverter, delimiter=' ', prefix=FLAGS_PREFIX): # To be integrated later
-    quality: str = commands.flag(name='quality', aliases=['q'], default='hd')
-    n: int = commands.flag(name='n', default=1)
+    quality: str = commands.flag(name='quality', aliases=['q'], default='hd', description=f"quality of the generated image, valid options are: {QUALITY_OPTIONS}")
+    size: str = commands.flag(name='size', aliases=['s'], default="1024x1024")
+    model: str = commands.flag(name='model', aliases=['m'], default="dall-e-3")
+    n: str = commands.flag(name='n', default=1)
 
-@bot.command(aliases=["g"])
-async def generate(ctx, *args):
-    prompt = " ".join(args)
-    await generate_route(ctx.message, prompt)
+def process_flags(flags: GenerateFlags):
+    # If help flag is present, print help message and exit
+
+    flags.quality = flags.quality.split(" ")[0]
+    flags.size = flags.size.split(" ")[0]
+    flags.model = flags.model.split(" ")[0]
+    flags.n = int(str(flags.n).split(" ")[0])
+
+    if flags.quality not in QUALITY_OPTIONS:
+        raise commands.BadArgument(f"Invalid quality flag, valid options are: {QUALITY_OPTIONS}")
+
+    if flags.size not in SIZE_OPTIONS:
+        raise commands.BadArgument(f"Invalid size flag, valid options are: {SIZE_OPTIONS}")
+
+    if flags.model not in MODEL_OPTIONS:
+        raise commands.BadArgument(f"Invalid model flag, valid options are: {MODEL_OPTIONS}")
+
+    if flags.n > max(N_OPTIONS) or flags.n < min(N_OPTIONS):
+        raise commands.BadArgument(f"Invalid n flag, n must be between {min(N_OPTIONS)} and {max(N_OPTIONS)}")
+
+    return flags
+
+def generate_help_message():
+    help_message = "Usage: -g, -generate [prompt] [flags]\n"
+    help_message += "Flags:\n"
+    help_message += f"{FLAGS_PREFIX}q, {FLAGS_PREFIX}quality: quality of the generated image, valid options are: {QUALITY_OPTIONS}\n"
+    help_message += f"{FLAGS_PREFIX}s, {FLAGS_PREFIX}size: size of the generated image, valid options are: {SIZE_OPTIONS}\n"
+    help_message += f"{FLAGS_PREFIX}m, {FLAGS_PREFIX}model: model to use for generation, valid options are: {MODEL_OPTIONS}\n"
+    help_message += f"{FLAGS_PREFIX}n: number of images to generate, valid options are: {N_OPTIONS}\n"
+    return help_message
+
+
+# @bot.command(aliases=["h"])
+# async def help(ctx):
+#     help_message = generate_help_message()
+#     await ctx.reply(help_message)
+
+
+@bot.command(aliases=["g"], help=generate_help_message())
+async def generate(ctx, *, flags: GenerateFlags):
+
+    prefix = ctx.bot.command_prefix
+    prefix_length = len(prefix)
+    prompt = ctx.message.content[prefix_length+2:]
+
+    try:
+        process_flags(flags)
+    except Exception as error:
+        await ctx.reply(error)
+        raise
+
+    # Strip flags from message
+    for flag in flags:
+        flag, value = flag[0], flag[1]
+        prompt = prompt.replace(f"{FLAGS_PREFIX}{flag} {value}", "")
+        shorthand_flag = flag[0]
+        prompt = prompt.replace(f"{FLAGS_PREFIX}{shorthand_flag} {value}", "")
+
+    # Remove extra whitespaces resulting from flag removal
+    prompt = " ".join(prompt.split())
+
+    await generate_route(ctx.message, prompt, model=flags.model, quality=flags.quality, size=flags.size, n=flags.n)
 
 @bot.command(aliases=["v"])
 async def variation(ctx):
@@ -95,7 +159,14 @@ def get_stats():
     return stats
 
 
-async def generate_route(message: discord.Message, prompt: str):
+async def generate_route(
+    message: discord.Message, 
+    prompt: str,
+    model="dall-e-3",
+    quality="hd",
+    size="1024x1024",
+    n=1
+):
     
     if validate_text(prompt):
 
@@ -103,11 +174,11 @@ async def generate_route(message: discord.Message, prompt: str):
 
         try:
             dalle_response = openai.images.generate(
-                model="dall-e-3",
+                model=model,
                 prompt=prompt,
-                n=1,
-                size="1024x1024",
-                quality="hd",
+                n=n,
+                size=size,
+                quality=quality,
                 response_format="url"
             )
         except Exception as error:
@@ -154,11 +225,9 @@ async def variations_route(message: discord.Message):
         image_io = download_image(message.content)
         prompt = f"variation of image {message.content}"
 
-
     else:
         image_io = await get_discord_image_from_message(message)
         prompt = f"variation of image {message.attachments[0].filename}"
-
 
     try:
         image, resized = await preprocess_input_image(image_io)
