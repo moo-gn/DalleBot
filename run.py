@@ -1,6 +1,7 @@
 import io
 import openai
 import discord
+from discord import Intents
 from PIL import Image
 import credentials
 from credentials import OPENAI_API_KEY, DISCORD_TOKEN
@@ -14,11 +15,10 @@ from urllib.parse import urlparse
 
 openai.api_key = OPENAI_API_KEY
 
-client = discord.Client()
+client = discord.Client(intents=Intents.all())
 
 # Flag for debugging
 DEBUG = False
-
 
 # Threshold for text moderation
 MODERATION_THRESHOLD = 0.1
@@ -108,17 +108,18 @@ def get_stats():
 
 
 def validate_text(text):
-    response = openai.Moderation.create(input=text)
+    response = openai.moderations.create(input=text)
 
-    output = response["results"][0]
+    output = response.results[0]
 
-    for category, value in output['category_scores'].items():
+    for category in output.category_scores:
+        value = category[1]
 
         if value >= MODERATION_THRESHOLD:
 
             return False
 
-    return not output["flagged"]
+    return not output.flagged
 
 
 def download_image(image_url: str) -> io.BytesIO:
@@ -166,7 +167,7 @@ async def preprocess_input_image(image_io: io.BytesIO):
 
 async def send_dalle_images(dalle_response, message: discord.Message, prompt):
     # Create list of download images from dalle urls
-    image_list = [download_image(url["url"]) for url in dalle_response["data"]]
+    image_list = [download_image(img.url) for img in dalle_response.data]
 
     cdn_urls = []
 
@@ -188,11 +189,12 @@ async def generate_route(message: discord.Message):
         bot_response = await message.reply("Generating...")
 
         try:
-            dalle_response = openai.Image.create(
-                api_key=OPENAI_API_KEY,
+            dalle_response = openai.images.generate(
+                model="dall-e-3",
                 prompt=prompt,
-                n=4,
+                n=1,
                 size="1024x1024",
+                quality="hd",
                 response_format="url"
             )
         except Exception as error:
@@ -255,8 +257,8 @@ async def variations_route(message: discord.Message):
 
     try:
         bot_response = await message.reply("Generating...")
-        dalle_response = openai.Image.create_variation(
-            api_key=OPENAI_API_KEY,
+        dalle_response = openai.images.create_variation(
+            model="dall-e-2",
             image=image.getvalue(),
             n=4,
             size="1024x1024",
