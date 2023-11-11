@@ -185,10 +185,12 @@ async def generate_route(
             await bot_response.edit(content=error)
             return error
 
-
         cdn_urls = await send_dalle_images(dalle_response, message, prompt)
 
-        await bot_response.edit(content="Done!")
+        if dalle_response.data[0].revised_prompt:
+            await bot_response.edit(content=f"Done! Your prompt was revised to: {dalle_response.data[0].revised_prompt}")
+        else:
+            await bot_response.edit(content="Done!")
 
         # Add prompt to database
         if not USE_DB_FLAG:
