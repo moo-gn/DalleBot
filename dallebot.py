@@ -187,10 +187,10 @@ async def generate_route(
 
         cdn_urls = await send_dalle_images(dalle_response, message, prompt)
 
-        if dalle_response.data[0].revised_prompt:
-            await bot_response.edit(content=f"Done! Your prompt was revised to: {dalle_response.data[0].revised_prompt}")
-        else:
-            await bot_response.edit(content="Done!")
+        revised_prompt = dalle_response.data[0].revised_prompt
+        revised_prompt = f"\nRevised your prompt to: {revised_prompt}" if revised_prompt else ""
+
+        await bot_response.edit(content="Done!" + revised_prompt)
 
         # Add prompt to database
         if not USE_DB_FLAG:
@@ -199,7 +199,7 @@ async def generate_route(
         try:
             add_prompt(message.author, prompt, serialize_image_urls(cdn_urls), message.created_at)
         except Exception as error:
-            await bot_response.edit(content="Done, but can't store image in database due to an error.")
+            await bot_response.edit(content="Done, but can't store image in database due to an error." + revised_prompt )
             return error
 
         return "success"
