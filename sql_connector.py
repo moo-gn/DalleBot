@@ -29,5 +29,3 @@ class DBClient:
             host=credentials.db_host, port=connection.local_bind_port,
             db=credentials.db,
         )
-
-        self.cursor =  self.conn.cursor()

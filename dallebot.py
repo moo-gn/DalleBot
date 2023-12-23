@@ -30,15 +30,24 @@ DEBUG = False
 FLAGS_PREFIX = "--"
 
 QUALITY_OPTIONS = ["hd", "standard"]
-SIZE_OPTIONS = ['256x256', '512x512', '1024x1024', '1024x1792', '1792x1024']
+SIZE_OPTIONS = ["portrait", "landscape", "square"]
+SIZE_MAPPING = {
+    "portrait": "1024x1792",
+    "landscape": "1792x1024",
+    "square": "1024x1024"
+}
 MODEL_OPTIONS = ["dall-e-2", "dall-e-3"]
 N_OPTIONS = [1, 2, 3, 4]
+STYLE_OPTIONS = ["vivid", "natural"]
+
 
 class GenerateFlags(commands.FlagConverter, delimiter=' ', prefix=FLAGS_PREFIX): # To be integrated later
-    quality: str = commands.flag(name='quality', aliases=['q'], default='hd', description=f"quality of the generated image, valid options are: {QUALITY_OPTIONS}")
-    size: str = commands.flag(name='size', aliases=['s'], default="1024x1024")
+    quality: str = commands.flag(name='quality', aliases=['q'], default="standard", description=f"quality of the generated image, valid options are: {QUALITY_OPTIONS}")
+    size: str = commands.flag(name='size', aliases=['s'], default="square")
     model: str = commands.flag(name='model', aliases=['m'], default="dall-e-3")
     n: str = commands.flag(name='n', default=1)
+    style: str = commands.flag(name='style', aliases=['st'], default="vivid")
+
 
 def process_flags(flags: GenerateFlags):
     # If help flag is present, print help message and exit
@@ -47,6 +56,7 @@ def process_flags(flags: GenerateFlags):
     flags.size = flags.size.split(" ")[0]
     flags.model = flags.model.split(" ")[0]
     flags.n = int(str(flags.n).split(" ")[0])
+    flags.style = flags.style.split(" ")[0]
 
     if flags.quality not in QUALITY_OPTIONS:
         raise commands.BadArgument(f"Invalid quality flag, valid options are: {QUALITY_OPTIONS}")
@@ -60,7 +70,11 @@ def process_flags(flags: GenerateFlags):
     if flags.n > max(N_OPTIONS) or flags.n < min(N_OPTIONS):
         raise commands.BadArgument(f"Invalid n flag, n must be between {min(N_OPTIONS)} and {max(N_OPTIONS)}")
 
+    if flags.style not in ["vivid", "natural"]:
+        raise commands.BadArgument(f"Invalid style flag, valid options are: ['vivid', 'natural']")
+
     return flags
+
 
 def generate_help_message():
     help_message = "Usage: -g, -generate [prompt] [flags]\n"
@@ -69,13 +83,8 @@ def generate_help_message():
     help_message += f"{FLAGS_PREFIX}s, {FLAGS_PREFIX}size: size of the generated image, valid options are: {SIZE_OPTIONS}\n"
     help_message += f"{FLAGS_PREFIX}m, {FLAGS_PREFIX}model: model to use for generation, valid options are: {MODEL_OPTIONS}\n"
     help_message += f"{FLAGS_PREFIX}n: number of images to generate, valid options are: {N_OPTIONS}\n"
+    help_message += f"{FLAGS_PREFIX}st, {FLAGS_PREFIX}style: style of the generated image, valid options are: {STYLE_OPTIONS}\n"
     return help_message
-
-
-# @bot.command(aliases=["h"])
-# async def help(ctx):
-#     help_message = generate_help_message()
-#     await ctx.reply(help_message)
 
 
 @bot.command(aliases=["g"], help=generate_help_message())
@@ -101,11 +110,21 @@ async def generate(ctx, *, flags: GenerateFlags):
     # Remove extra whitespaces resulting from flag removal
     prompt = " ".join(prompt.split())
 
-    await generate_route(ctx.message, prompt, model=flags.model, quality=flags.quality, size=flags.size, n=flags.n)
+    await generate_route(
+        ctx.message,
+        prompt, 
+        model=flags.model,
+        quality=flags.quality,
+        size=SIZE_MAPPING[flags.size], 
+        n=flags.n,
+        style=flags.style    
+    )
+
 
 @bot.command(aliases=["v"])
 async def variation(ctx):
     await variations_route(ctx.message)
+
 
 @bot.command(aliases=["d"])
 async def dalle(ctx):
@@ -117,8 +136,11 @@ def add_prompt(author, prompt, image_urls, timestamp):
     sql = "INSERT INTO dalle(author, prompt, image_urls, timestamp) values (%s, %s, %s, %s);"
     val = (author, prompt, image_urls, timestamp)
 
+    db_client.conn.ping(reconnect=True)
+
     try:
-        db_client.cursor.execute(sql, val)
+        cursor = db_client.conn.cursor()
+        cursor.execute(sql, val)
         db_client.conn.commit()
 
     except Exception as err:
@@ -132,17 +154,21 @@ def get_stats():
 
     stats = {}
 
-    db_client.cursor.execute("SELECT COUNT(*) FROM dalle;")
+    db_client.conn.ping(reconnect=True)
 
-    data = db_client.cursor.fetchone()
+    cursor = db_client.conn.cursor()
+
+    cursor.execute("SELECT COUNT(*) FROM dalle;")
+
+    data = cursor.fetchone()
 
     stats['runs'] = data[0]
 
     stats['spent'] = round(15.0/115.0 * stats['runs'], 2)
 
-    db_client.cursor.execute(f"SELECT author FROM dalle;")
+    cursor.execute(f"SELECT author FROM dalle;")
 
-    data = db_client.cursor.fetchall()
+    data = cursor.fetchall()
     
     user_counts = Counter(data)
 
@@ -165,7 +191,8 @@ async def generate_route(
     model="dall-e-3",
     quality="hd",
     size="1024x1024",
-    n=1
+    n=1,
+    style="natural"
 ):
     
     if validate_text(prompt):
@@ -179,6 +206,7 @@ async def generate_route(
                 n=n,
                 size=size,
                 quality=quality,
+                style=style,
                 response_format="url"
             )
         except Exception as error:
@@ -293,7 +321,6 @@ async def dalle_route(message: discord.Message):
             await message.reply(stats_text[i:i+2000])
     else:
         await message.reply(stats_text)
-
 
 
 @bot.event
